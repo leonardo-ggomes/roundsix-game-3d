@@ -6,6 +6,8 @@ import Player from "./Player"
 import Loader from "./Loader"
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh"
 import Stats from "three/examples/jsm/libs/stats.module.js"
+import NPC from "./NPC"
+import NPCManager from "./NPCManager"
 
 
 BufferGeometry.prototype.computeBoundsTree = computeBoundsTree
@@ -31,6 +33,7 @@ class Experience {
     playerImpulse = new Vector3()
     velocity = 1.4;
     hit = false
+    npcManager: NPCManager
 
     stats = new Stats()
 
@@ -42,14 +45,20 @@ class Experience {
         this.camera = new Camera()
         this.mainScene = new MainScene()
         this.renderer = new Renderer(this.camera, this.mainScene)
-
         this.player = new Player(this.loader)
-        this.mainScene.scene.add(this.player)
+
+        this.npcManager = new NPCManager(this.loader);
+
+        // Adiciona o grupo com todos os NPCs à cena
+        this.mainScene.scene.add(this.npcManager.group);
+
+        this.npcManager.spawn({ x: 5, y: -1.5, z: -10 });
+        this.npcManager.spawn({ x: -3, y: -1.5, z: -8 });
 
         this.loader.gltfLoad.load("/models/5v5_game_map.glb", (gltf) => {
             const model = gltf.scene
             model.scale.set(.001, .001, .001)
-
+            model.position.set(0, -2, 0)
             model.traverse((child) => {
                 if (child instanceof Mesh && child.geometry) {
                     child.geometry.computeBoundsTree()
@@ -65,9 +74,25 @@ class Experience {
             this.mainScene.scene.add(directLight)
             this.mainScene.scene.add(new DirectionalLightHelper(directLight))
             this.mainScene.scene.add(model)
+
+           
+            this.player.position.set(0, 10, 0)
+            this.mainScene.scene.add(this.player)
+           
         })
 
         this.update()
+        window.addEventListener("mousedown", (event) => {
+            if (event.button === 0) {  
+                const direction = new Vector3()
+                this.camera.perspectiveCamera.getWorldDirection(direction)
+
+                const npcsMeshes = this.npcManager.collectNpcMeshes(this.npcManager.npcs);
+                this.player.attack(npcsMeshes, direction);
+
+                this.player.setState("CharacterArmature|Sword_Slash", 1.8)
+            }
+        });
 
         window.addEventListener("keydown", (e) => this.keysPressed.add(e.key.toLowerCase()))
         window.addEventListener("keyup", (e) => this.keysPressed.delete(e.key.toLowerCase()))
@@ -107,11 +132,13 @@ class Experience {
 
             if (distanceToGround < 0) {
                 this.hit = true
-                this.player.position.y = surfaceY + playerHeight / 2
+                const targetY = surfaceY + playerHeight / 2
+                this.player.position.y = MathUtils.lerp(this.player.position.y, targetY, 0.25)
                 this.velocityY = 0
             } else if (distanceToGround < threshold) {
                 this.hit = true
-                this.player.position.y = Math.max(this.player.position.y, surfaceY + playerHeight / 2)
+                const targetY = surfaceY + playerHeight / 2
+                this.player.position.y = MathUtils.lerp(this.player.position.y, targetY, 0.25)
                 this.velocityY = 0
             } else {
                 this.hit = false
@@ -131,6 +158,7 @@ class Experience {
 
         this.camera.update(this.player)
         this.player.update(delta)
+        this.npcManager.update(delta);
 
         // Rotação baseada na câmera
         this.camera.perspectiveCamera.getWorldDirection(this.playerDirection)
@@ -149,15 +177,22 @@ class Experience {
             this.player.setState("CharacterArmature|Run", 1.8)
         } else if (this.keysPressed.has("s")) {
             this.playerImpulse.add(this.playerDirection.clone().multiplyScalar(-this.velocity * delta))
+            this.player.setState("CharacterArmature|Run_Back", 1.5)
         } else if (this.keysPressed.has("a")) {
-            const side = new Vector3(-this.playerDirection.z, 0, this.playerDirection.x)
-            this.playerImpulse.add(side.clone().multiplyScalar((this.velocity - 1) * delta))
-        } else if (this.keysPressed.has("d")) {
             const side = new Vector3(this.playerDirection.z, 0, -this.playerDirection.x)
-            this.playerImpulse.add(side.clone().multiplyScalar((this.velocity - 1) * delta))
-        } else {
+            this.playerImpulse.add(side.clone().multiplyScalar((this.velocity * 2) * delta))
+            this.player.setState("CharacterArmature|Run_Left", 1.0)
+        } else if (this.keysPressed.has("d")) {
+            const side = new Vector3(-this.playerDirection.z, 0, this.playerDirection.x)
+            this.playerImpulse.add(side.clone().multiplyScalar((this.velocity * 2) * delta))
+            this.player.setState("CharacterArmature|Run_Right", 1.0)
+            
+        }        
+        else {
             this.player.setState("CharacterArmature|Idle", 1.0)
         }
+
+        
 
         this.player.quaternion.slerpQuaternions(
             this.player.quaternion,

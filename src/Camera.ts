@@ -32,7 +32,7 @@ class Camera {
             // Limitar pitch para ângulos entre -45 e +45 graus (em radianos)
             const pitchChange = -e.movementY * this.rotationSpeed
             const newPitch = this.pitch + pitchChange
-            this.pitch = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, newPitch))
+            this.pitch = Math.max(-Math.PI / 8, Math.min(Math.PI / 8, newPitch))
         }
     }
 

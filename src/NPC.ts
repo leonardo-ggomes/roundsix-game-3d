@@ -6,13 +6,12 @@ import {
     AnimationMixer,
     AnimationClip,
     AnimationAction,
-    Raycaster,
-    Vector3
+    LoopOnce,
+    LoopRepeat
 } from "three";
 import Loader from "./Loader";
-import NPC from "./NPC";
 
-class Player extends Object3D {
+class NPC extends Object3D {
     radius = 0.5;
     capSegments = 10;
     color = "#0000ff";
@@ -25,14 +24,8 @@ class Player extends Object3D {
     currentAction: AnimationAction | null = null;
     currentState: string = "";
 
-    collisionMeshes: Mesh[] = []
-    raycaster = new Raycaster()
-    down = new Vector3(0, 0, -1)
-    intersects: any[] = []
-
-    isAttacking = false;
-    attackCooldown = 0.8; // segundos, duração do ataque
-    attackTimer = 0;
+    health: number = 100;
+    isAlive: boolean = true;
 
     constructor(loader: Loader) {
         super();
@@ -54,7 +47,10 @@ class Player extends Object3D {
                 if (child instanceof Mesh && child.geometry) {
                     child.geometry.computeBoundsTree()
                     child.material.wireframe = false
-                    this.collisionMeshes.push(child)
+
+                    // Marcar como NPC
+                    child.userData.type = "npc"
+                    child.userData.parentNpc = this // referência para chamar takeDamage
                 }
             })
 
@@ -75,37 +71,34 @@ class Player extends Object3D {
         });
     }
 
+    takeDamage(amount: number) {
+        if (!this.isAlive) return;
 
-    attack(npcs: Mesh[], cameraDirection: Vector3) {
-        if (this.isAttacking) return; // se já atacando, ignora
+        this.health -= amount;
+        console.log(`NPC sofreu ${amount} de dano. Vida restante: ${this.health}`);
 
-        this.isAttacking = true;
-        this.attackTimer = 0;
-        this.setState("CharacterArmature|Sword_Slash", 1.8);
-
-        const origin = this.position.clone()
-        origin.y += 0.5 // dispara da altura da cabeça
-
-        const direction = cameraDirection.clone().normalize()
-
-        this.raycaster.set(origin, direction)
-        const maxDistance = 4 // alcance do ataque em metros
-
-        const hits = this.raycaster.intersectObjects(npcs, true)
-
-        if (hits.length > 0 && hits[0].distance <= maxDistance) {
-            const hit = hits[0]
-            console.log(hit.object)
-            console.log("🎯 NPC atingido:", hit.object.name, "Distância:", hit.distance)
-
-            if (hit.object.userData.type === "npc") {
-                const npc = hit.object.userData.parentNpc as NPC;
-                npc.takeDamage(50);
-            }
-
+        if (this.health <= 0) {
+            this.die();
         } else {
-            console.log("❌ Nenhum NPC atingido.")
+            this.setState("CharacterArmature|HitReceive_2", 1.0); // supondo que exista animação de hit
         }
+    }
+
+    die() {
+        if (!this.isAlive) return;  // já evita execução múltipla
+        this.isAlive = false;
+        console.log("NPC morreu.");
+        this.setState("CharacterArmature|Death", 1.0);
+
+        setTimeout(() => {
+            this.parent?.remove(this);
+        }, 3000);
+    }
+
+    updateBehavior(delta: number) {
+        if (!this.isAlive) return;
+
+        // Futuro: patrulha, fugir, seguir jogador etc.
     }
 
     /**
@@ -116,15 +109,7 @@ class Player extends Object3D {
             this.mixer.update(delta);
         }
 
-        // atualiza timer
-        if (this.isAttacking) {
-            this.attackTimer += delta;
-            if (this.attackTimer >= this.attackCooldown) {
-                this.isAttacking = false;
-                this.attackTimer = 0;
-                this.setState("CharacterArmature|Idle", 1.0); // volta para idle
-            }
-        }
+        this.updateBehavior(delta)
     }
 
     /**
@@ -136,7 +121,15 @@ class Player extends Object3D {
         const clip = this.clips[name];
         const newAction = this.mixer.clipAction(clip);
         newAction.timeScale = speed;
-       
+
+        // Configura loop para animação de morte
+        if (name === "CharacterArmature|Death") {
+            newAction.setLoop(LoopOnce, 1);
+            newAction.clampWhenFinished = true;  // mantém o frame final
+        } else {
+            newAction.setLoop(LoopRepeat, Infinity);
+        }
+
         if (this.currentAction) {
             this.currentAction.fadeOut(0.3);
         }
@@ -148,4 +141,4 @@ class Player extends Object3D {
     }
 }
 
-export default Player;
+export default NPC;
