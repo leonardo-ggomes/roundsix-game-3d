@@ -1,4 +1,4 @@
-import { BufferGeometry, Clock, DirectionalLight, DirectionalLightHelper, MathUtils, Mesh, PlaneGeometry, Quaternion, Raycaster, Vector2, Vector3 } from "three"
+import { BufferGeometry, Clock, DirectionalLight, DirectionalLightHelper, MathUtils, Mesh, Quaternion, Raycaster, Vector3 } from "three"
 import Camera from "./Camera"
 import MainScene from "./MainScene"
 import Renderer from "./Renderer"
@@ -6,7 +6,6 @@ import Player from "./Player"
 import Loader from "./Loader"
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh"
 import Stats from "three/examples/jsm/libs/stats.module.js"
-import NPC from "./NPC"
 import NPCManager from "./NPCManager"
 
 
@@ -34,6 +33,7 @@ class Experience {
     velocity = 1.4;
     hit = false
     npcManager: NPCManager
+    isShooting = false
 
     stats = new Stats()
 
@@ -52,13 +52,12 @@ class Experience {
         // Adiciona o grupo com todos os NPCs à cena
         this.mainScene.scene.add(this.npcManager.group);
 
-        this.npcManager.spawn({ x: 5, y: -1.5, z: -10 });
-        this.npcManager.spawn({ x: -3, y: -1.5, z: -8 });
+        this.npcManager.spawn({ x: -2, y: .5, z: 0 });
+        this.npcManager.spawn({ x: -3, y: .5, z: -8 });
 
-        this.loader.gltfLoad.load("/models/5v5_game_map.glb", (gltf) => {
+        this.loader.loader.load("/models/glTF/stylized_locker_room.glb", (gltf) => {
             const model = gltf.scene
-            model.scale.set(.001, .001, .001)
-            model.position.set(0, -2, 0)
+            model.scale.set(2.0, 2.0, 2.0)
             model.traverse((child) => {
                 if (child instanceof Mesh && child.geometry) {
                     child.geometry.computeBoundsTree()
@@ -75,22 +74,23 @@ class Experience {
             this.mainScene.scene.add(new DirectionalLightHelper(directLight))
             this.mainScene.scene.add(model)
 
-           
-            this.player.position.set(0, 10, 0)
+
+            this.player.position.set(2, 0, 0)
             this.mainScene.scene.add(this.player)
-           
+
         })
 
-        this.update()
+        this.loader.start(() => this.update())
+
         window.addEventListener("mousedown", (event) => {
-            if (event.button === 0) {  
-                const direction = new Vector3()
-                this.camera.perspectiveCamera.getWorldDirection(direction)
+            if (event.button === 0) {
+                this.isShooting = true
+            }
+        });
 
-                const npcsMeshes = this.npcManager.collectNpcMeshes(this.npcManager.npcs);
-                this.player.attack(npcsMeshes, direction);
-
-                this.player.setState("CharacterArmature|Sword_Slash", 1.8)
+        window.addEventListener("mouseup", (event) => {
+            if (event.button === 0) {
+                this.isShooting = false
             }
         });
 
@@ -169,30 +169,44 @@ class Experience {
         this.quaternion.setFromAxisAngle(new Vector3(0, 1, 0), angle)
 
         // Entrada do teclado (direção)
-        if (this.keysPressed.has("w") && !this.keysPressed.has("shift")) {
-            this.playerImpulse.add(this.playerDirection.clone().multiplyScalar(this.velocity * delta))
-            this.player.setState("CharacterArmature|Walk", 1.5)
-        } else if (this.keysPressed.has("w") && this.keysPressed.has("shift")) {
-            this.playerImpulse.add(this.playerDirection.clone().multiplyScalar(this.velocity * 2.5 * delta))
-            this.player.setState("CharacterArmature|Run", 1.8)
-        } else if (this.keysPressed.has("s")) {
-            this.playerImpulse.add(this.playerDirection.clone().multiplyScalar(-this.velocity * delta))
-            this.player.setState("CharacterArmature|Run_Back", 1.5)
-        } else if (this.keysPressed.has("a")) {
-            const side = new Vector3(this.playerDirection.z, 0, -this.playerDirection.x)
-            this.playerImpulse.add(side.clone().multiplyScalar((this.velocity * 2) * delta))
-            this.player.setState("CharacterArmature|Run_Left", 1.0)
-        } else if (this.keysPressed.has("d")) {
-            const side = new Vector3(-this.playerDirection.z, 0, this.playerDirection.x)
-            this.playerImpulse.add(side.clone().multiplyScalar((this.velocity * 2) * delta))
-            this.player.setState("CharacterArmature|Run_Right", 1.0)
-            
-        }        
-        else {
-            this.player.setState("CharacterArmature|Idle", 1.0)
+
+        if (!this.player.isAttacking) {
+            if (this.keysPressed.has("w") && !this.keysPressed.has("shift")) {
+                this.playerImpulse.add(this.playerDirection.clone().multiplyScalar(this.velocity * 1.5 * delta))
+                this.player.setState("Walk", 1.1)
+                this.player.lastAction = "IdleRifle"
+            } else if (this.keysPressed.has("w") && this.keysPressed.has("shift")) {
+                this.playerImpulse.add(this.playerDirection.clone().multiplyScalar(this.velocity * 2.8 * delta))
+                this.player.setState("Running", 1.0)
+                this.player.lastAction = "IdleRifle"
+            } else if (this.keysPressed.has("s")) {
+                this.playerImpulse.add(this.playerDirection.clone().multiplyScalar(-this.velocity * delta))
+                this.player.setState("Backward", 1.0)
+                this.player.lastAction = "IdleRifle"
+            } else if (this.keysPressed.has("a")) {
+                const side = new Vector3(this.playerDirection.z, 0, -this.playerDirection.x)
+                this.playerImpulse.add(side.clone().multiplyScalar((this.velocity * 2) * delta))
+                this.player.setState("WalkLeft", 1.0)
+                this.player.lastAction = "IdleRifle"
+            } else if (this.keysPressed.has("d")) {
+                const side = new Vector3(-this.playerDirection.z, 0, this.playerDirection.x)
+                this.playerImpulse.add(side.clone().multiplyScalar((this.velocity * 2) * delta))
+                this.player.setState("WalkRight", 1.0)
+                this.player.lastAction = "IdleRifle"
+            }
+            else if (this.isShooting) {
+                const direction = new Vector3()
+                this.camera.perspectiveCamera.getWorldDirection(direction)
+
+                const npcsMeshes = this.npcManager.collectNpcMeshes(this.npcManager.npcs);
+                this.player.attack(npcsMeshes, direction);
+                this.player.lastAction = "IdleRifle"
+            }
+            else {
+                this.player.setState(this.player.lastAction, 1.0)
+            }
         }
 
-        
 
         this.player.quaternion.slerpQuaternions(
             this.player.quaternion,

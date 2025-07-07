@@ -7,7 +7,8 @@ import {
     AnimationClip,
     AnimationAction,
     Raycaster,
-    Vector3
+    Vector3,
+    LoopOnce
 } from "three";
 import Loader from "./Loader";
 import NPC from "./NPC";
@@ -16,12 +17,12 @@ class Player extends Object3D {
     radius = 0.5;
     capSegments = 10;
     color = "#0000ff";
-    height = 1;
+    height = 2;
     radialSegments = 30;
     loader: Loader;
 
     mixer!: AnimationMixer;
-    clips: Record<string, AnimationClip> = {};
+    clips: { [key: string]: AnimationAction } = {}
     currentAction: AnimationAction | null = null;
     currentState: string = "";
 
@@ -34,6 +35,8 @@ class Player extends Object3D {
     attackCooldown = 0.8; // segundos, duração do ataque
     attackTimer = 0;
 
+    lastAction = "Idle"
+
     constructor(loader: Loader) {
         super();
         this.loader = loader;
@@ -42,13 +45,15 @@ class Player extends Object3D {
             new CapsuleGeometry(this.radius, this.height, this.capSegments, this.radialSegments),
             new MeshBasicMaterial({ color: this.color, wireframe: true })
         );
-        capsule.scale.set(0.5, 0.5, 0.5);
+        capsule.scale.set(1, 1, 1);
         this.add(capsule);
 
-        this.loader.gltfLoad.load("/models/glTF/character$animated.glb", (gltf) => {
+        this.loader.loader.load("/models/456$animated.glb", async (gltf) => {
             const model = gltf.scene;
-            model.scale.set(0.7, 0.7, 0.7);
-            model.position.y = -this.height / 2 // alinhado com a cápsula
+            model.scale.set(1.8, 1.8, 1.8);
+            capsule.position.y = (this.height + .3 * this.radius) / 2;
+            model.position.y = - (this.height * this.radius) / 2;
+
 
             model.traverse((child) => {
                 if (child instanceof Mesh && child.geometry) {
@@ -63,48 +68,67 @@ class Player extends Object3D {
             // Inicia mixer e animações
             this.mixer = new AnimationMixer(model);
 
+             for (let animationKey in this.loader.globalAnimations) {
+                this.clips[animationKey] = this.mixer.clipAction(this.loader.globalAnimations[animationKey])
+            }
+
             // Salva todas animações por nome
-            gltf.animations.forEach((clip: AnimationClip) => {
-                this.clips[clip.name] = clip;
-            });
+            if (gltf.animations.length > 0) {
+                this.clips["Idle"] = this.mixer.clipAction(gltf.animations[0])              
+            }
 
             // Inicia com Idle se existir
-            if (this.clips["CharacterArmature|Idle"]) {
-                this.setState("CharacterArmature|Idle", 1.0);
+            if (this.clips["Idle"]) {
+                this.setState("Idle", 1.0);
             }
         });
-    }
+    }  
 
-
-    attack(npcs: Mesh[], cameraDirection: Vector3) {
-        if (this.isAttacking) return; // se já atacando, ignora
+     attack(npcs: Mesh[], cameraDirection: Vector3) {
+        if (this.isAttacking) return;
 
         this.isAttacking = true;
-        this.attackTimer = 0;
-        this.setState("CharacterArmature|Sword_Slash", 1.8);
 
-        const origin = this.position.clone()
-        origin.y += 0.5 // dispara da altura da cabeça
+        const kindOfPuching = "FireRifle" //Math.round(Math.random() * 2) % 2 == 0 ? "Punching" : "PunchingRight"
 
-        const direction = cameraDirection.clone().normalize()
+        const action = this.setState(kindOfPuching, 1.0); // velocidade opcional
+        if (!action) return;
 
-        this.raycaster.set(origin, direction)
-        const maxDistance = 4 // alcance do ataque em metros
+        action.setLoop(LoopOnce, 0);
+        action.clampWhenFinished = true; // trava na última pose
 
-        const hits = this.raycaster.intersectObjects(npcs, true)
+
+        const onFinish = (event: any) => {
+            if (event.action === action) {
+                console.log("⚡ Animação de ataque terminou");
+                this.mixer.removeEventListener("finished", onFinish);
+                this.isAttacking = false;
+                this.setState("IdleRifle", 1.0);
+            }
+        };
+        this.mixer.addEventListener("finished", onFinish);
+
+
+        const origin = this.position.clone();
+        origin.y += 0.5;
+
+        const direction = cameraDirection.clone().normalize();
+
+        this.raycaster.set(origin, direction);
+        const maxDistance = 4;
+
+        const hits = this.raycaster.intersectObjects(npcs, true);
 
         if (hits.length > 0 && hits[0].distance <= maxDistance) {
-            const hit = hits[0]
-            console.log(hit.object)
-            console.log("🎯 NPC atingido:", hit.object.name, "Distância:", hit.distance)
+            const hit = hits[0];
+            console.log("🎯 NPC atingido:", hit.object.name, "Distância:", hit.distance);
 
             if (hit.object.userData.type === "npc") {
                 const npc = hit.object.userData.parentNpc as NPC;
                 npc.takeDamage(50);
             }
-
         } else {
-            console.log("❌ Nenhum NPC atingido.")
+            console.log("❌ Nenhum NPC atingido.");
         }
     }
 
@@ -115,28 +139,18 @@ class Player extends Object3D {
         if (this.mixer) {
             this.mixer.update(delta);
         }
-
-        // atualiza timer
-        if (this.isAttacking) {
-            this.attackTimer += delta;
-            if (this.attackTimer >= this.attackCooldown) {
-                this.isAttacking = false;
-                this.attackTimer = 0;
-                this.setState("CharacterArmature|Idle", 1.0); // volta para idle
-            }
-        }
     }
 
     /**
      * Troca o estado da máquina e executa animação
      */
-    setState(name: string, speed: number) {
-        if (this.currentState === name || !this.clips[name]) return;
+    setState(name: string, speed: number): AnimationAction | null {
+        if (this.currentState === name || !this.clips[name]) return null;
 
         const clip = this.clips[name];
-        const newAction = this.mixer.clipAction(clip);
+        const newAction = clip;
         newAction.timeScale = speed;
-       
+
         if (this.currentAction) {
             this.currentAction.fadeOut(0.3);
         }
@@ -145,6 +159,8 @@ class Player extends Object3D {
 
         this.currentAction = newAction;
         this.currentState = name;
+
+        return newAction;
     }
 }
 

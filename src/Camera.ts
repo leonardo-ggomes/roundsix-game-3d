@@ -9,7 +9,7 @@ class Camera {
     mousePressed = false
     smoothFactor = 0.1
 
-    offset = new Vector3(0, 3, 6)      // Distância da câmera atrás e acima do personagem
+    offset = new Vector3(0, 3, 3)      // Distância da câmera atrás e acima do personagem
     lookAtOffset = new Vector3(0, 2, 0) // Para olhar para o "peito" ou cabeça do personagem
 
     constructor() {
@@ -17,7 +17,16 @@ class Camera {
         this.perspectiveCamera.position.copy(this.offset)
         this.perspectiveCamera.lookAt(this.lookAtOffset)
 
-        document.addEventListener("mousedown", () => (this.mousePressed = true))
+        window.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+        });
+
+        document.addEventListener("mousedown", (e: MouseEvent) => {
+           if(e.button === 2)
+           {
+                this.mousePressed = true
+           }
+        })
         document.addEventListener("mouseup", () => (this.mousePressed = false))
         document.addEventListener("mousemove", this.onMouseMove)
 
@@ -32,7 +41,7 @@ class Camera {
             // Limitar pitch para ângulos entre -45 e +45 graus (em radianos)
             const pitchChange = -e.movementY * this.rotationSpeed
             const newPitch = this.pitch + pitchChange
-            this.pitch = Math.max(-Math.PI / 8, Math.min(Math.PI / 8, newPitch))
+            this.pitch = Math.max(-Math.PI / 10, Math.min(Math.PI / 10, newPitch))
         }
     }
 

@@ -38,9 +38,9 @@ class NPC extends Object3D {
         capsule.scale.set(0.5, 0.5, 0.5);
         this.add(capsule);
 
-        this.loader.gltfLoad.load("/models/glTF/character$animated.glb", (gltf) => {
+        this.loader.loader.load("/models/npc/npc_guard$rifle_idle.glb", (gltf) => {
             const model = gltf.scene;
-            model.scale.set(0.7, 0.7, 0.7);
+            model.scale.set(1.9, 1.9, 1.9);
             model.position.y = -this.height / 2 // alinhado com a cápsula
 
             model.traverse((child) => {
@@ -58,15 +58,15 @@ class NPC extends Object3D {
 
             // Inicia mixer e animações
             this.mixer = new AnimationMixer(model);
-
+   
             // Salva todas animações por nome
             gltf.animations.forEach((clip: AnimationClip) => {
                 this.clips[clip.name] = clip;
             });
 
             // Inicia com Idle se existir
-            if (this.clips["CharacterArmature|Idle"]) {
-                this.setState("CharacterArmature|Idle", 1.0);
+            if (this.clips["Armature|mixamo.com|Layer0"]) {
+                this.setState("Armature|mixamo.com|Layer0", 1.0);
             }
         });
     }
