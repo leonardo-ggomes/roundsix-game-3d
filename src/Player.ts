@@ -4,7 +4,6 @@ import {
     MeshBasicMaterial,
     Object3D,
     AnimationMixer,
-    AnimationClip,
     AnimationAction,
     Raycaster,
     Vector3,
@@ -12,6 +11,7 @@ import {
 } from "three";
 import Loader from "./Loader";
 import NPC from "./NPC";
+import GUI from "three/examples/jsm/libs/lil-gui.module.min.js";
 
 class Player extends Object3D {
     radius = 0.5;
@@ -20,6 +20,7 @@ class Player extends Object3D {
     height = 2;
     radialSegments = 30;
     loader: Loader;
+     model?: Object3D
 
     mixer!: AnimationMixer;
     clips: { [key: string]: AnimationAction } = {}
@@ -36,55 +37,67 @@ class Player extends Object3D {
     attackTimer = 0;
 
     lastAction = "Idle"
+    isLoadedModel: Promise<void>
+    handObject: Object3D = new Object3D()
 
     constructor(loader: Loader) {
         super();
         this.loader = loader;
+        this.isLoadedModel = this.loadModel()
 
-        const capsule = new Mesh(
-            new CapsuleGeometry(this.radius, this.height, this.capSegments, this.radialSegments),
-            new MeshBasicMaterial({ color: this.color, wireframe: true })
-        );
-        capsule.scale.set(1, 1, 1);
-        this.add(capsule);
-
-        this.loader.loader.load("/models/456$animated.glb", async (gltf) => {
-            const model = gltf.scene;
-            model.scale.set(1.8, 1.8, 1.8);
-            capsule.position.y = (this.height + .3 * this.radius) / 2;
-            model.position.y = - (this.height * this.radius) / 2;
+        this.setWeapon()
+    }
 
 
-            model.traverse((child) => {
-                if (child instanceof Mesh && child.geometry) {
-                    child.geometry.computeBoundsTree()
-                    child.material.wireframe = false
-                    this.collisionMeshes.push(child)
+    async loadModel() {
+        return await new Promise<void>((resolve) => {
+            this.loader.loader.load("/models/456$animated.glb", async (gltf) => {
+                const capsule = new Mesh(
+                    new CapsuleGeometry(this.radius, this.height, this.capSegments, this.radialSegments),
+                    new MeshBasicMaterial({ color: this.color, wireframe: true, visible: false })
+                );
+                capsule.scale.set(1, 1, 1);
+                this.add(capsule);
+
+                this.model = gltf.scene;
+                this.model.scale.set(1.8, 1.8, 1.8);
+                capsule.position.y = (this.height + .3 * this.radius) / 2;
+                this.model.position.y = - (this.height * this.radius) / 2;
+
+
+                this.model.traverse((child) => {
+                    if (child instanceof Mesh && child.geometry) {
+                        child.geometry.computeBoundsTree()
+                        child.material.wireframe = false
+                        this.collisionMeshes.push(child)
+                    }
+                })
+
+                this.add(this.model);
+
+                // Inicia mixer e animações
+                this.mixer = new AnimationMixer(this.model);
+
+                for (let animationKey in this.loader.globalAnimations) {
+                    this.clips[animationKey] = this.mixer.clipAction(this.loader.globalAnimations[animationKey])
                 }
-            })
 
-            this.add(model);
+                // Salva todas animações por nome
+                if (gltf.animations.length > 0) {
+                    this.clips["Idle"] = this.mixer.clipAction(gltf.animations[0])
+                }
 
-            // Inicia mixer e animações
-            this.mixer = new AnimationMixer(model);
+                // Inicia com Idle se existir
+                if (this.clips["Idle"]) {
+                    this.setState("Idle", 1.0);
+                }
 
-             for (let animationKey in this.loader.globalAnimations) {
-                this.clips[animationKey] = this.mixer.clipAction(this.loader.globalAnimations[animationKey])
-            }
+                resolve()
+            });
+        })
+    }
 
-            // Salva todas animações por nome
-            if (gltf.animations.length > 0) {
-                this.clips["Idle"] = this.mixer.clipAction(gltf.animations[0])              
-            }
-
-            // Inicia com Idle se existir
-            if (this.clips["Idle"]) {
-                this.setState("Idle", 1.0);
-            }
-        });
-    }  
-
-     attack(npcs: Mesh[], cameraDirection: Vector3) {
+    attack(npcs: Mesh[], cameraDirection: Vector3) {
         if (this.isAttacking) return;
 
         this.isAttacking = true;
@@ -130,6 +143,47 @@ class Player extends Object3D {
         } else {
             console.log("❌ Nenhum NPC atingido.");
         }
+    }
+
+    setWeapon() {
+
+        this.isLoadedModel.then(async () => {
+            let gltf = await this.loader.loader.loadAsync("models/rifle.glb")
+
+            this.handObject = gltf.scene
+            // this.handObject.rotation.y = Math.PI / 2
+            console.log(this.model)
+            let handBone = this.model?.getObjectByName("mixamorigRightHand")
+            console.log(handBone)
+            if (handBone) {
+
+                this.handObject.position.set(0, 0, 0);
+                this.handObject.rotation.set(0, 0, 0);
+                this.handObject.scale.set(.06, .06, .06)
+
+                handBone.attach(this.handObject)
+                this.handObject.position.set(.05, 0.23, 0.05);  // Alinhar na palma da mão
+                this.handObject.rotation.set(
+                    1.7530087007031,
+                    Math.PI,
+                    1.52053084433746
+                );
+
+                const f = new GUI().addFolder("Weapon")
+
+                f .add(this.handObject.position,"x", -50, 50, .1)
+                f .add(this.handObject.position,"y", -50, 50, .1)
+                f .add(this.handObject.position,"z", -50, 50, .1)
+
+                f .add(this.handObject.rotation,"x", -Math.PI, Math.PI)
+                f .add(this.handObject.rotation,"y", -Math.PI, Math.PI)
+                f .add(this.handObject.rotation,"z", -Math.PI, Math.PI)
+
+                this.handObject.visible = true
+            }
+        })
+
+
     }
 
     /**
