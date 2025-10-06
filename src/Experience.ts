@@ -33,7 +33,6 @@ class Experience {
     velocity = 1.4;
     hit = false
     npcManager: NPCManager
-    isShooting = false
 
     stats = new Stats()
 
@@ -84,13 +83,14 @@ class Experience {
 
         window.addEventListener("mousedown", (event) => {
             if (event.button === 0) {
-                this.isShooting = true
+                this.player.isShooting = true
             }
         });
 
         window.addEventListener("mouseup", (event) => {
             if (event.button === 0) {
-                this.isShooting = false
+                this.player.isShooting = false
+                this.player.isAttacking = false
             }
         });
 
@@ -157,7 +157,8 @@ class Experience {
         const delta = this.clock.getDelta()
 
         this.camera.update(this.player)
-        this.player.update(delta)
+        const npcsMeshes = this.npcManager.collectNpcMeshes(this.npcManager.npcs);
+        this.player.update(delta, npcsMeshes);
         this.npcManager.update(delta);
 
         // Rotação baseada na câmera
@@ -194,17 +195,15 @@ class Experience {
                 this.player.setState("WalkRight", 1.0)
                 this.player.lastAction = "IdleRifle"
             }
-            else if (this.isShooting) {
-                const direction = new Vector3()
-                this.camera.perspectiveCamera.getWorldDirection(direction)
+            else if (this.player.isShooting) {
+                this.player.attack(this.mainScene.scene);
+                this.player.lastAction = "IdleRifle";
+            }
+            else {              
+                this.player.setState(this.player.lastAction, 1.0)               
+            }
 
-                const npcsMeshes = this.npcManager.collectNpcMeshes(this.npcManager.npcs);
-                this.player.attack(npcsMeshes, direction);
-                this.player.lastAction = "IdleRifle"
-            }
-            else {
-                this.player.setState(this.player.lastAction, 1.0)
-            }
+           
         }
 
 
